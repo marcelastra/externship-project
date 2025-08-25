@@ -1,0 +1,326 @@
+library(tidyverse)
+library(readr)
+# combining all the yearly data (2005-2025)
+water_levels <- list.files(path='/Users/marcelastrakhan/Externship Data', full.names=TRUE) %>%
+  map_dfr(~ read.csv(.x) %>%
+            mutate(
+              `Predicted..ft.` = as.numeric(as.character(`Predicted..ft.`)),
+              `Verified..ft.` = as.numeric(as.character(`Verified..ft.`)),
+              `Date` = as.Date(Date)
+            )) %>%
+  mutate(Surge = Verified..ft. - Predicted..ft.) %>%
+  na.omit()
+water_levels
+# means of columns
+mean(water_levels$Predicted..ft.)
+mean(water_levels$Verified..ft.)
+mean(water_levels$Surge)
+# graphing predicted and verified (very messy maybe R just sucks at graphing this sort of data)
+ggplot(data = water_levels, aes(x = Date, y = Predicted..ft.)) +
+  geom_line(col = 'blue') +
+  geom_line(data = water_levels, aes(x = Date, y = Verified..ft.), 
+            col = 'red') +
+  labs(y = "Water Level (ft)")
+# surge v. date
+ggplot(water_levels, aes(x = Date, y = Surge)) +
+  geom_line(col = 'grey') +
+  geom_smooth(method='lm', se=FALSE)
+
+# "Flooding" column determined by WL
+water_levels <- water_levels %>%
+  mutate(Flooding = case_when(
+    Verified..ft. < 6.2 ~ "no",
+    Verified..ft. >= 6.2 & Verified..ft. < 6.7 ~ "near",
+    Verified..ft. >= 6.7 & Verified..ft. < 7.7 ~ "minor",
+    Verified..ft. >= 7.7 & Verified..ft. < 8.7 ~ "mid",
+    Verified..ft. >= 8.7 ~ "major"
+  )) 
+
+# tables
+tab <- table(water_levels$Flooding)
+addmargins(tab)
+prop.table(tab)
+
+month_levels <- c(
+  "January", "February", "March", "April", "May", "June", 
+  "July", "August", "September", "October", "November", "December"
+)
+
+
+water_levels_graphing <- water_levels %>%
+  filter(Flooding == "minor" | Flooding == "mid" | Flooding == "major") %>%
+  mutate(Months = months(Date)) %>%
+  mutate(Years = year(Date))
+
+# graphing flooding hours for eacg threshold per month
+ggplot(water_levels_graphing, aes(x = factor(Months, month_levels))) +
+  geom_bar() + labs(title = "# of Flooding Hours for each type of flooding per month",
+                    x = "Months", y = "# of Flooding Hours") + facet_wrap(vars(Flooding))
+# finding number of events above near flooding 
+practice = filter(water_levels_graphing, Months  == "December") # change month every time; could write function for this
+
+practice$above = practice$Verified..ft. >= 6.7 # above near flooding threshold
+
+practice$event = NA
+
+count = 1
+
+for (x in 1:(nrow(practice)-1)){
+  print(practice$Date[x] - practice$Date[x+1] == 0)
+  print(count)
+  if (practice$Date[x] - practice$Date[x+1] == 0){
+    practice$event[x] = count
+  }
+  else{
+    practice$event[x] = count
+    count = count + 1
+  }
+}
+practice$event[x+1] = count
+practice
+max(practice$event) #the number of days
+
+events <- data.frame(
+  Months = c(
+    "January", "February", "March", "April", "May", "June", 
+    "July", "August", "September", "October", "November", "December"),
+  Events = c(44, 27, 43, 50, 52, 47, 40, 40, 60, 88, 47, 42)
+)
+events
+
+ggplot(events, aes(x = factor(Months, month_levels), y = Events)) +
+  geom_col() + labs(title = "# of Events above near-flooding per month", x = "Months", y = "# of Events")
+
+## can continue this for each individal level (above minor, above moderate, etc.)
+# Finding number of hours above near-flooding
+practice2 = water_levels_graphing
+practice2$above = practice2$Verified..ft. >= 6.7
+
+practice2$event = NA
+
+count = 1
+
+for (x in 1:(nrow(practice2)-1)){
+  print(practice2$Date[x] - practice2$Date[x+1] == 0)
+  print(count)
+  if (practice2$Date[x] - practice2$Date[x+1] == 0){
+    practice2$event[x] = count
+  }
+  else{
+    practice2$event[x] = count
+    count = count + 1
+  }
+  if (practice2$Months[x] != practice2$Months[x+1]){
+    count = 1
+  }
+}
+practice2$event[x+1] = count
+practice2
+
+# gathering relevant data
+yearlyevents <- practice2 %>%
+  select(Date, Months, event)
+yearlyevents
+
+
+eventhourstable <- data.frame(yearlyevents$Date, yearlyevents$Months)
+
+# graphing hours above near flooding for every day of the month
+ggplot(eventhourstable, aes(x = mday(yearlyevents$Date))) +
+  geom_bar() + labs(title = "# of hours above near flooding per month", x = "Day of the Month", y = "# of Flooding Hours") +
+  facet_wrap(~factor(yearlyevents$Months, month_levels))
+
+sum(yearlyevents$Months == "October") # test
+# For surge levels over 1 ft
+
+#exploratory statistics
+mean(water_levels_graphing$Surge)
+median(water_levels_graphing$Surge)
+
+practice3 = water_levels_graphing[water_levels_graphing$Surge >= 1,]
+practice3$above = practice3$Surge >= 1
+
+
+practice3$event = NA
+
+count = 1
+
+for (x in 1:(nrow(practice3)-1)){
+  print(practice3$Date[x] - practice3$Date[x+1] == 0)
+  print(count)
+  if (practice3$Date[x] - practice3$Date[x+1] == 0){
+    practice3$event[x] = count
+  }
+  else{
+    practice3$event[x] = count
+    count = count + 1
+  }
+  if (practice3$Months[x] != practice3$Months[x+1]){
+    count = 1
+  }
+}
+practice3$event[x+1] = count
+practice3
+
+#gathering relevant data
+yearlysurge <- practice3 %>%
+  select(Date, Months, Surge)
+yearlysurge
+
+
+surgehourstable <- data.frame(yearlysurge$Date, yearlysurge$Months)
+
+#graphing surge hours over 1 ft for each day of the month
+ggplot(surgehourstable, aes(x = mday(yearlysurge$Date))) +
+  geom_bar() + labs(title = "Hours of surge levels over 1ft per day", x = "Day of the Month", y = "# of Surge Hours over 1 ft") + 
+  facet_wrap(~factor(yearlysurge$Months, month_levels))
+# For surge levels over 0.5 ft
+
+practice4 = water_levels_graphing[water_levels_graphing$Surge >= 0.5,]
+
+
+practice4$event = NA
+
+count = 1
+
+for (x in 1:(nrow(practice4)-1)){
+  print(practice4$Date[x] - practice4$Date[x+1] == 0)
+  print(count)
+  if (practice4$Date[x] - practice4$Date[x+1] == 0){
+    practice4$event[x] = count
+  }
+  else{
+    practice4$event[x] = count
+    count = count + 1
+  }
+  if (practice4$Months[x] != practice4$Months[x+1]){
+    count = 1
+  }
+}
+practice4$event[x+1] = count
+practice4
+
+yearlysurge <- practice4 %>%
+  select(Date, Months, Surge)
+yearlysurge
+
+
+surgehourstable <- data.frame(yearlysurge$Date, yearlysurge$Months)
+
+#graphing surge hours over 0.5 ft for each day of the month
+ggplot(surgehourstable, aes(x = mday(yearlysurge$Date))) +
+  geom_bar() + labs(title = "Hours of surge levels over 0.5ft per day", x = "Day of the Month", y = "# of Surge Hours") + 
+  facet_wrap(~factor(yearlysurge$Months, month_levels))
+# For surge levels over 1.5 ft
+practice5 = water_levels_graphing[water_levels_graphing$Surge >= 1.5,]
+practice5$above = practice5$Surge >= 1
+
+
+practice5$event = NA
+
+count = 1
+
+for (x in 1:(nrow(practice5)-1)){
+  print(practice5$Date[x] - practice5$Date[x+1] == 0)
+  print(count)
+  if (practice5$Date[x] - practice5$Date[x+1] == 0){
+    practice5$event[x] = count
+  }
+  else{
+    practice5$event[x] = count
+    count = count + 1
+  }
+  if (practice5$Months[x] != practice5$Months[x+1]){
+    count = 1
+  }
+}
+practice5$event[x+1] = count
+practice5
+
+yearlysurge <- practice5 %>%
+  select(Date, Months, Surge)
+yearlysurge
+
+
+surgehourstable <- data.frame(yearlysurge$Date, yearlysurge$Months)
+
+#graph of hours of surge above 1.5 ft for each day of the month
+ggplot(surgehourstable, aes(x = mday(yearlysurge$Date))) +
+  geom_bar() + labs(title = "Hours of surge levels over 1.5ft per day", x = "Day of the Month", y = "# of Surge Hours") + 
+  facet_wrap(~factor(yearlysurge$Months, month_levels))
+#final results
+surge <- c("0.5", "1", "1.5")
+surge_df <- data.frame(surgelevel = surge)
+surge_df
+for (x in month_levels){
+  x_hours <- c(sum(practice4$Months==x), sum(practice3$Months==x), 
+               sum(practice5$Months==x))
+  print(x_hours)
+  surge_df <- cbind(surge_df, x_hours)
+}
+colnames(surge_df) <- c("surgelevel","Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                        "Jul", "Aug", "Sep", "Oct","Nov", "Dec")
+
+surge_df #hours of surge per month for each threshold
+
+safe_max <- function(events) {
+  if (length(events) > 0 && !all(is.na(events))) {
+    return(max(events, na.rm = TRUE))
+  } else {
+    return(0) 
+  }
+}
+
+surge_df2 <- data.frame(surgelevel = surge)
+for (x in month_levels){
+  x_events <- c(safe_max(practice4$event[practice4$Months == x]), 
+                safe_max(practice3$event[practice3$Months == x]), 
+                safe_max(practice5$event[practice5$Months == x]))
+  print(x_events)
+  surge_df2 <- cbind(surge_df2, x_events)
+}
+colnames(surge_df2) <- c("surgelevel","Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                         "Jul", "Aug", "Sep", "Oct","Nov", "Dec")
+
+surge_df2 #days of surge per month for each threshold
+
+events #days of flooding per month
+
+flood_df <- data.frame(Months = month_levels, 
+                       FloodHours = numeric(length(month_levels)))
+for (i in seq_along(month_levels)) {
+  x <- month_levels[i]
+  floodhours <- sum(yearlyevents$Months == x) #adding up flooding hours (used later with correlations)
+  flood_df$FloodHours[i] <- floodhours
+}
+
+# storing correlations
+correlations <- apply(surge_df2[ , -1], 1, function(surge_row) {
+  cor(events$Events, surge_row, use = "complete.obs")
+})
+
+# printing correlations
+names(correlations) <- paste("Surge Level", surge_df2$surgelevel)  # Label by surge level
+print(correlations)
+
+# surge v year plot
+WLgraphingsurge <- water_levels_graphing %>% 
+  group_by(Years) %>%
+  summarize(Avgsurge = mean(Surge, na.rm=TRUE))
+WLgraphingsurge
+ggplot(WLgraphingsurge, aes(x=Years, y=Avgsurge)) +
+  geom_line(color = "blue", linewidth = 1) +  
+  geom_point(color = "red", size = 2) + 
+  labs(title = "Average Surge per Year", x="Year", y="Average Surge (ft)")
+
+# flood hours every year per month
+hours_summary <- water_levels_graphing %>%
+  group_by(Years, Months) %>%
+  summarise(Flooding_Hours = n(), .groups = "drop")
+print(hours_summary)
+ggplot(hours_summary, aes(x=Years,y=Flooding_Hours, group=Months)) +
+  geom_col() +
+  geom_smooth(method='lm', se=FALSE) +
+  facet_wrap(~factor(Months, month_levels)) +
+  labs(title="Flooding Hours over Time per Month", subtitle="Minor, Moderate, and Major Flooding",
+       y="Number of Flooding Hours")
